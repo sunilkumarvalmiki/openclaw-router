@@ -5,8 +5,6 @@ mod routes;
 mod routing;
 mod types;
 
-use std::sync::Arc;
-
 use actix_cors::Cors;
 use actix_web::{middleware, web, App, HttpServer};
 use sqlx::postgres::PgPoolOptions;
@@ -14,7 +12,7 @@ use tracing_actix_web::TracingLogger;
 use tracing_subscriber::{fmt, EnvFilter};
 
 use crate::config::AppConfig;
-use crate::providers::{LlmProvider, OpenAiProvider};
+use crate::providers::ProviderFactory;
 use crate::routes::completions::AppState;
 use crate::routing::RequestScorer;
 
@@ -77,20 +75,9 @@ async fn main() -> std::io::Result<()> {
     tracing::info!("Database migrations applied");
 
     // -----------------------------------------------------------------------
-    // 6. Build LLM providers (only if API keys are configured)
+    // 6. Build LLM providers from environment variables
     // -----------------------------------------------------------------------
-    let mut llm_providers: Vec<Arc<dyn LlmProvider>> = Vec::new();
-
-    if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
-        let base_url = std::env::var("OPENAI_BASE_URL").ok();
-        let provider = OpenAiProvider::new(api_key, base_url);
-        llm_providers.push(Arc::new(provider));
-        tracing::info!("OpenAI provider registered");
-    }
-
-    if llm_providers.is_empty() {
-        tracing::warn!("No LLM provider API keys configured — proxy endpoint will return errors");
-    }
+    let llm_providers = ProviderFactory::create_from_env();
 
     // -----------------------------------------------------------------------
     // 7. Build shared application state
