@@ -134,24 +134,24 @@ fn find_provider_for_model(
     }
 
     // 2. Infer provider from model name prefixes
-    let inferred_provider = if model_id.starts_with("gemini") {
-        Some("gemini")
+    let inferred_providers: Vec<&str> = if model_id.starts_with("gemini") {
+        vec!["gemini"]
     } else if model_id.starts_with("gpt-") || model_id.starts_with("o1") || model_id.starts_with("o3") || model_id.starts_with("o4") {
-        Some("openai")
+        vec!["openai", "github-copilot"] // try OpenAI first, fall back to GitHub Copilot
     } else if model_id.starts_with("claude") {
-        Some("openai") // Anthropic models via OpenAI-compatible endpoint
+        vec!["openai", "github-copilot"]
     } else if model_id.starts_with("grok") {
-        Some("xai")
+        vec!["xai"]
     } else if model_id.starts_with("deepseek") {
-        Some("deepseek")
+        vec!["deepseek"]
     } else if model_id.contains('/') {
-        Some("openrouter") // Slash-separated models like "meta-llama/llama-3.1-70b"
+        vec!["openrouter"]
     } else {
-        None
+        vec![]
     };
 
-    if let Some(name) = inferred_provider {
-        if let Some(p) = providers.iter().find(|p| p.name() == name && p.is_healthy()) {
+    for name in &inferred_providers {
+        if let Some(p) = providers.iter().find(|p| p.name() == *name && p.is_healthy()) {
             return Ok(Arc::clone(p));
         }
     }

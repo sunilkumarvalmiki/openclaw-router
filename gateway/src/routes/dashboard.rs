@@ -135,6 +135,12 @@ fn get_known_models(provider: &str) -> Vec<String> {
             "meta-llama/llama-3.1-70b-instruct",
             "anthropic/claude-3.5-sonnet",
         ],
+        "github-copilot" => vec![
+            "gpt-4o", "gpt-4o-mini", "gpt-4-turbo",
+            "o1", "o1-mini", "o3-mini",
+            "Phi-3-medium-128k-instruct", "Phi-3-small-8k-instruct",
+            "Mistral-large", "Mistral-small",
+        ],
         _ => vec![],
     }.into_iter().map(String::from).collect()
 }

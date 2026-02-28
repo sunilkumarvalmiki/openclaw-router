@@ -39,6 +39,7 @@ import {
 const PROVIDER_COLORS: Record<string, string> = {
   ollama: "#6366f1",
   openai: "#10b981",
+  "github-copilot": "#1f6feb",
   gemini: "#f59e0b",
   xai: "#ef4444",
   deepseek: "#3b82f6",
