@@ -1,6 +1,11 @@
 mod config;
 mod error;
+mod providers;
 mod routes;
+mod routing;
+mod types;
+
+use std::sync::Arc;
 
 use actix_cors::Cors;
 use actix_web::{middleware, web, App, HttpServer};
@@ -9,6 +14,9 @@ use tracing_actix_web::TracingLogger;
 use tracing_subscriber::{fmt, EnvFilter};
 
 use crate::config::AppConfig;
+use crate::providers::{LlmProvider, OpenAiProvider};
+use crate::routes::completions::AppState;
+use crate::routing::RequestScorer;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -69,13 +77,33 @@ async fn main() -> std::io::Result<()> {
     tracing::info!("Database migrations applied");
 
     // -----------------------------------------------------------------------
-    // 6. Build shared application state
+    // 6. Build LLM providers (only if API keys are configured)
+    // -----------------------------------------------------------------------
+    let mut llm_providers: Vec<Arc<dyn LlmProvider>> = Vec::new();
+
+    if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
+        let base_url = std::env::var("OPENAI_BASE_URL").ok();
+        let provider = OpenAiProvider::new(api_key, base_url);
+        llm_providers.push(Arc::new(provider));
+        tracing::info!("OpenAI provider registered");
+    }
+
+    if llm_providers.is_empty() {
+        tracing::warn!("No LLM provider API keys configured — proxy endpoint will return errors");
+    }
+
+    // -----------------------------------------------------------------------
+    // 7. Build shared application state
     // -----------------------------------------------------------------------
     let config_data = web::Data::new(config.clone());
     let pool_data = web::Data::new(db_pool);
+    let app_state = web::Data::new(AppState {
+        scorer: RequestScorer::new(),
+        providers: llm_providers,
+    });
 
     // -----------------------------------------------------------------------
-    // 7. Start the HTTP server
+    // 8. Start the HTTP server
     // -----------------------------------------------------------------------
     let workers = num_cpus::get();
     tracing::info!(workers, "Starting HTTP server on {}", &bind_address);
@@ -93,6 +121,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(middleware::Compress::default())
             .app_data(config_data.clone())
             .app_data(pool_data.clone())
+            .app_data(app_state.clone())
             .configure(routes::configure)
     })
     .workers(workers)
