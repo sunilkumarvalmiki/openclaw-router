@@ -1,5 +1,6 @@
 mod config;
 mod error;
+mod metrics;
 mod providers;
 mod routes;
 mod routing;
@@ -12,6 +13,7 @@ use tracing_actix_web::TracingLogger;
 use tracing_subscriber::{fmt, EnvFilter};
 
 use crate::config::AppConfig;
+use crate::metrics::MetricsCollector;
 use crate::providers::ProviderFactory;
 use crate::routes::completions::AppState;
 use crate::routing::RequestScorer;
@@ -94,6 +96,7 @@ async fn main() -> std::io::Result<()> {
     // -----------------------------------------------------------------------
     let config_data = web::Data::new(config.clone());
     let pool_data = web::Data::new(db_pool); // Option<PgPool>
+    let metrics = web::Data::new(MetricsCollector::new());
     let app_state = web::Data::new(AppState {
         scorer: RequestScorer::new(),
         providers: llm_providers,
@@ -108,6 +111,8 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         let cors = Cors::default()
             .allowed_origin(&config.dashboard_url)
+            .allowed_origin("http://localhost:3000")
+            .allowed_origin("http://localhost:3001")
             .allow_any_method()
             .allow_any_header()
             .max_age(3600);
@@ -118,6 +123,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(middleware::Compress::default())
             .app_data(config_data.clone())
             .app_data(pool_data.clone())
+            .app_data(metrics.clone())
             .app_data(app_state.clone())
             .configure(routes::configure)
     })

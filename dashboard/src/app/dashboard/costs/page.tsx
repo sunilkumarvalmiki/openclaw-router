@@ -1,9 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import {
-  LineChart,
-  Line,
   BarChart,
   Bar,
   XAxis,
@@ -11,78 +9,130 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
   Cell,
 } from "recharts"
-import { PiggyBank, TrendingDown, ArrowRightLeft } from "lucide-react"
-import { fetchCostData, convertCurrency, formatCurrency } from "@/lib/api"
+import { Zap, ArrowRightLeft, RefreshCw } from "lucide-react"
+import {
+  fetchMetrics,
+  fetchProviderStats,
+  convertCurrency,
+  formatCurrency,
+  type DashboardMetrics,
+  type ProviderMetrics,
+} from "@/lib/api"
 
 type Currency = "INR" | "USD" | "EUR"
 
+const PROVIDER_COLORS: Record<string, string> = {
+  ollama: "#6366f1",
+  openai: "#10b981",
+  gemini: "#f59e0b",
+  xai: "#ef4444",
+  deepseek: "#3b82f6",
+  openrouter: "#8b5cf6",
+  bedrock: "#ec4899",
+  custom: "#14b8a6",
+}
+
 export default function CostsPage() {
   const [currency, setCurrency] = useState<Currency>("INR")
-  const [costData, setCostData] = useState<{
-    monthlySavings: number
-    monthlyWithRouter: number
-    monthlyWithoutRouter: number
-    dailyCosts: {
-      date: string
-      withRouter: number
-      withoutRouter: number
-      savings: number
-    }[]
-    costByProvider: { name: string; cost: number; color: string }[]
-    costByModel: { name: string; cost: number; color: string }[]
-    savingsByProfile: {
-      profile: string
-      savings: number
-      percentage: number
-    }[]
-  } | null>(null)
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
+  const [providers, setProviders] = useState<ProviderMetrics[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Load currency preference from localStorage
     const saved = localStorage.getItem("preferred-currency")
     if (saved && ["INR", "USD", "EUR"].includes(saved)) {
       setCurrency(saved as Currency)
     }
   }, [])
 
-  useEffect(() => {
-    async function loadData() {
-      const data = await fetchCostData()
-      setCostData(data)
+  const loadData = useCallback(async () => {
+    try {
+      setError(null)
+      const [m, p] = await Promise.all([fetchMetrics(), fetchProviderStats()])
+      setMetrics(m)
+      setProviders(p)
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to connect to gateway"
+      )
+    } finally {
+      setLoading(false)
     }
-    loadData()
   }, [])
+
+  useEffect(() => {
+    loadData()
+    const interval = setInterval(loadData, 15000)
+    return () => clearInterval(interval)
+  }, [loadData])
 
   const handleCurrencyChange = (c: Currency) => {
     setCurrency(c)
     localStorage.setItem("preferred-currency", c)
   }
 
-  const fc = (amountUSD: number) =>
-    formatCurrency(convertCurrency(amountUSD, currency), currency)
-
-  if (!costData) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-pulse text-gray-400">Loading cost data...</div>
+        <div className="flex items-center gap-3 text-gray-400">
+          <RefreshCw className="w-5 h-5 animate-spin" />
+          <span>Loading cost data...</span>
+        </div>
       </div>
     )
   }
 
-  const exchangeRate = currency === "INR" ? 83.5 : currency === "EUR" ? 0.92 : 1
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <div className="text-red-500 text-center">
+          <p className="font-semibold">Gateway Unavailable</p>
+          <p className="text-sm mt-1">{error}</p>
+        </div>
+        <button
+          onClick={loadData}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  if (!metrics) return null
+
+  const tokensByProvider = providers
+    .filter((p) => p.total_tokens > 0)
+    .map((p) => ({
+      name: p.name,
+      tokens: p.total_tokens,
+      requests: p.total_requests,
+      color: PROVIDER_COLORS[p.name] || "#94a3b8",
+    }))
+    .sort((a, b) => b.tokens - a.tokens)
+
+  const requestsByProvider = providers
+    .filter((p) => p.total_requests > 0)
+    .map((p) => ({
+      name: p.name,
+      requests: p.total_requests,
+      color: PROVIDER_COLORS[p.name] || "#94a3b8",
+    }))
+    .sort((a, b) => b.requests - a.requests)
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Cost Tracker
+            Cost & Usage
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Monitor spending, track savings, and optimize costs
+            Token usage and cost analytics from real gateway data
           </p>
         </div>
 
@@ -91,7 +141,12 @@ export default function CostsPage() {
           <div className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
             <ArrowRightLeft className="w-3.5 h-3.5" />
             <span>
-              1 USD = {currency === "INR" ? "₹83.50" : currency === "EUR" ? "€0.92" : "$1.00"}
+              1 USD ={" "}
+              {currency === "INR"
+                ? "₹83.50"
+                : currency === "EUR"
+                ? "€0.92"
+                : "$1.00"}
             </span>
           </div>
           <div className="flex bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
@@ -112,292 +167,165 @@ export default function CostsPage() {
         </div>
       </div>
 
-      {/* Savings Summary Card */}
-      <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-8 shadow-lg text-white">
+      {/* Usage Summary */}
+      <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-8 shadow-lg text-white">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-green-100 text-sm font-medium">
-              You saved this month
+            <p className="text-indigo-100 text-sm font-medium">
+              Total Tokens Processed
             </p>
             <p className="text-4xl font-bold mt-2">
-              {fc(costData.monthlySavings)}
+              {metrics.total_tokens.toLocaleString()}
             </p>
-            <p className="text-green-100 mt-2 text-sm">
-              By intelligently routing to cost-effective providers
-            </p>
+            <div className="flex gap-6 mt-3 text-sm text-indigo-100">
+              <span>
+                Prompt: {metrics.total_prompt_tokens.toLocaleString()}
+              </span>
+              <span>
+                Completion: {metrics.total_completion_tokens.toLocaleString()}
+              </span>
+            </div>
           </div>
           <div className="p-4 bg-white/10 rounded-2xl">
-            <PiggyBank className="w-8 h-8" />
+            <Zap className="w-8 h-8" />
           </div>
         </div>
       </div>
 
-      {/* Comparison Table */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">
-            Cost Comparison: Router vs Direct
-          </h3>
+      {/* Usage Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 shadow-sm">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Total Requests
+          </p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+            {metrics.total_requests.toLocaleString()}
+          </p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-100 dark:border-gray-800">
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Period
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  With Router
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Without Router
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Savings
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-              <tr>
-                <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">
-                  Daily (avg)
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                  {fc(costData.monthlyWithRouter / 30)}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                  {fc(costData.monthlyWithoutRouter / 30)}
-                </td>
-                <td className="px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
-                  <div className="flex items-center gap-1">
-                    <TrendingDown className="w-4 h-4" />
-                    {fc(costData.monthlySavings / 30)}
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">
-                  Weekly (avg)
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                  {fc(costData.monthlyWithRouter / 4)}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                  {fc(costData.monthlyWithoutRouter / 4)}
-                </td>
-                <td className="px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
-                  <div className="flex items-center gap-1">
-                    <TrendingDown className="w-4 h-4" />
-                    {fc(costData.monthlySavings / 4)}
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">
-                  Monthly
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                  {fc(costData.monthlyWithRouter)}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                  {fc(costData.monthlyWithoutRouter)}
-                </td>
-                <td className="px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
-                  <div className="flex items-center gap-1">
-                    <TrendingDown className="w-4 h-4" />
-                    {fc(costData.monthlySavings)}
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 shadow-sm">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Avg Tokens / Request
+          </p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+            {metrics.total_requests > 0
+              ? Math.round(
+                  metrics.total_tokens / metrics.total_requests
+                ).toLocaleString()
+              : "0"}
+          </p>
+        </div>
+        <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 shadow-sm">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Active Providers
+          </p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+            {providers.filter((p) => p.total_requests > 0).length}
+          </p>
         </div>
       </div>
 
-      {/* Savings by Profile */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 shadow-sm">
-        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">
-          Savings by Cost Profile
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {costData.savingsByProfile.map((profile) => (
-            <div
-              key={profile.profile}
-              className="p-4 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {profile.profile}
-                </span>
-                <span className="text-xs font-medium text-green-600 dark:text-green-400">
-                  {profile.percentage}% saved
-                </span>
-              </div>
-              <p className="text-lg font-bold text-gray-900 dark:text-white">
-                {fc(profile.savings)}
-              </p>
-              <div className="mt-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                <div
-                  className="bg-green-500 h-1.5 rounded-full transition-all"
-                  style={{ width: `${profile.percentage}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Cost Trend Chart */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 shadow-sm">
-        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">
-          Daily Cost Trend (Last 30 Days)
-        </h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={costData.dailyCosts}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis
-              dataKey="date"
-              tick={{ fontSize: 12 }}
-              stroke="#9ca3af"
-              interval="preserveStartEnd"
-            />
-            <YAxis
-              tick={{ fontSize: 12 }}
-              stroke="#9ca3af"
-              tickFormatter={(v) => `$${v}`}
-            />
-            <Tooltip
-              formatter={(value, name) => [
-                fc(value as number),
-                name === "withRouter"
-                  ? "With Router"
-                  : name === "withoutRouter"
-                  ? "Without Router"
-                  : "Savings",
-              ]}
-              contentStyle={{
-                backgroundColor: "rgba(255,255,255,0.95)",
-                border: "1px solid #e5e7eb",
-                borderRadius: "12px",
-                boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
-              }}
-            />
-            <Legend
-              formatter={(value) =>
-                value === "withRouter"
-                  ? "With Router"
-                  : value === "withoutRouter"
-                  ? "Without Router"
-                  : "Savings"
-              }
-            />
-            <Line
-              type="monotone"
-              dataKey="withRouter"
-              stroke="#3b82f6"
-              strokeWidth={2}
-              dot={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="withoutRouter"
-              stroke="#ef4444"
-              strokeWidth={2}
-              dot={false}
-              strokeDasharray="5 5"
-            />
-            <Line
-              type="monotone"
-              dataKey="savings"
-              stroke="#10b981"
-              strokeWidth={2}
-              dot={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Cost by Provider + Cost by Model */}
+      {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Tokens by Provider */}
         <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 shadow-sm">
           <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">
-            Cost by Provider
+            Tokens by Provider
           </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart
-              data={costData.costByProvider}
-              layout="vertical"
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis
-                type="number"
-                tick={{ fontSize: 12 }}
-                stroke="#9ca3af"
-                tickFormatter={(v) => `$${v}`}
-              />
-              <YAxis
-                type="category"
-                dataKey="name"
-                tick={{ fontSize: 12 }}
-                stroke="#9ca3af"
-                width={80}
-              />
-              <Tooltip
-                formatter={(value) => [fc(value as number), "Cost"]}
-                contentStyle={{
-                  backgroundColor: "rgba(255,255,255,0.95)",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "12px",
-                }}
-              />
-              <Bar dataKey="cost" radius={[0, 6, 6, 0]}>
-                {costData.costByProvider.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          {tokensByProvider.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={tokensByProvider} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis
+                  type="number"
+                  tick={{ fontSize: 12 }}
+                  stroke="#9ca3af"
+                  tickFormatter={(v) => v.toLocaleString()}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  tick={{ fontSize: 12 }}
+                  stroke="#9ca3af"
+                  width={80}
+                />
+                <Tooltip
+                  formatter={(value) => [
+                    (value as number).toLocaleString(),
+                    "Tokens",
+                  ]}
+                  contentStyle={{
+                    backgroundColor: "rgba(255,255,255,0.95)",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "12px",
+                  }}
+                />
+                <Bar dataKey="tokens" radius={[0, 6, 6, 0]}>
+                  {tokensByProvider.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-[300px] text-gray-400">
+              No token data yet.
+            </div>
+          )}
         </div>
 
+        {/* Requests by Provider */}
         <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 shadow-sm">
           <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">
-            Cost by Model
+            Requests by Provider
           </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart
-              data={costData.costByModel}
-              layout="vertical"
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis
-                type="number"
-                tick={{ fontSize: 12 }}
-                stroke="#9ca3af"
-                tickFormatter={(v) => `$${v}`}
-              />
-              <YAxis
-                type="category"
-                dataKey="name"
-                tick={{ fontSize: 12 }}
-                stroke="#9ca3af"
-                width={120}
-              />
-              <Tooltip
-                formatter={(value) => [fc(value as number), "Cost"]}
-                contentStyle={{
-                  backgroundColor: "rgba(255,255,255,0.95)",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "12px",
-                }}
-              />
-              <Bar dataKey="cost" radius={[0, 6, 6, 0]}>
-                {costData.costByModel.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          {requestsByProvider.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={requestsByProvider} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis
+                  type="number"
+                  tick={{ fontSize: 12 }}
+                  stroke="#9ca3af"
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  tick={{ fontSize: 12 }}
+                  stroke="#9ca3af"
+                  width={80}
+                />
+                <Tooltip
+                  formatter={(value) => [
+                    (value as number).toLocaleString(),
+                    "Requests",
+                  ]}
+                  contentStyle={{
+                    backgroundColor: "rgba(255,255,255,0.95)",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "12px",
+                  }}
+                />
+                <Bar dataKey="requests" radius={[0, 6, 6, 0]}>
+                  {requestsByProvider.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-[300px] text-gray-400">
+              No request data yet.
+            </div>
+          )}
         </div>
+      </div>
+
+      {/* Note */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4">
+        <p className="text-sm text-blue-800 dark:text-blue-300">
+          Cost estimation requires pricing data from providers. Currently showing token usage metrics.
+          Pricing integration will be available when the pricing sync service is configured.
+        </p>
       </div>
     </div>
   )

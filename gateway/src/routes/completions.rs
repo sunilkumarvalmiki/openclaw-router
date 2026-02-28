@@ -4,6 +4,7 @@ use std::time::Instant;
 use actix_web::{web, HttpResponse};
 
 use crate::error::AppError;
+use crate::metrics::MetricsCollector;
 use crate::providers::LlmProvider;
 use crate::routing::RequestScorer;
 use crate::types::{ChatCompletionRequest, RouterMetadata};
@@ -22,6 +23,7 @@ pub struct AppState {
 /// 4. Forwards the request and appends router metadata.
 pub async fn chat_completions(
     state: web::Data<AppState>,
+    metrics: web::Data<MetricsCollector>,
     body: web::Json<ChatCompletionRequest>,
 ) -> Result<HttpResponse, AppError> {
     let request = body.into_inner();
@@ -45,36 +47,72 @@ pub async fn chat_completions(
     // 3. Find the right provider for the requested model
     // -----------------------------------------------------------------
     let provider = find_provider_for_model(&state.providers, &model_id)?;
+    let provider_name = provider.name().to_string();
+    let tier_str = scoring.tier.to_string();
 
-    // -----------------------------------------------------------------
-    // 4. Forward request to the provider
-    // -----------------------------------------------------------------
-    let provider_start = Instant::now();
-    let mut response = provider.chat_completion(&request, &model_id).await?;
-    let latency_ms = provider_start.elapsed().as_millis() as u64;
-
-    // -----------------------------------------------------------------
-    // 5. Attach router metadata
-    // -----------------------------------------------------------------
     let cost_profile = request
         .x_cost_profile
         .as_deref()
         .unwrap_or("auto")
         .to_string();
 
-    response.x_router_metadata = Some(RouterMetadata {
-        provider: provider.name().to_string(),
-        tier: scoring.tier.to_string(),
-        cost_profile,
-        cost_usd: None,
-        cost_without_router_usd: None,
-        savings_percent: None,
-        cache_hit: false,
-        latency_ms: Some(latency_ms),
-        scoring_ms: Some(scoring_ms),
-    });
+    // -----------------------------------------------------------------
+    // 4. Forward request to the provider
+    // -----------------------------------------------------------------
+    let provider_start = Instant::now();
+    let result = provider.chat_completion(&request, &model_id).await;
+    let latency_ms = provider_start.elapsed().as_millis() as u64;
 
-    Ok(HttpResponse::Ok().json(response))
+    match result {
+        Ok(mut response) => {
+            // ---------------------------------------------------------
+            // 5. Record success metrics
+            // ---------------------------------------------------------
+            metrics.record_success(
+                &model_id,
+                &provider_name,
+                &tier_str,
+                &cost_profile,
+                latency_ms,
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+                false, // cache_hit
+                scoring_ms,
+            );
+
+            // ---------------------------------------------------------
+            // 6. Attach router metadata
+            // ---------------------------------------------------------
+            response.x_router_metadata = Some(RouterMetadata {
+                provider: provider_name,
+                tier: tier_str,
+                cost_profile,
+                cost_usd: None,
+                cost_without_router_usd: None,
+                savings_percent: None,
+                cache_hit: false,
+                latency_ms: Some(latency_ms),
+                scoring_ms: Some(scoring_ms),
+            });
+
+            Ok(HttpResponse::Ok().json(response))
+        }
+        Err(e) => {
+            // ---------------------------------------------------------
+            // 5b. Record failure metrics
+            // ---------------------------------------------------------
+            metrics.record_failure(
+                &model_id,
+                &provider_name,
+                &tier_str,
+                &cost_profile,
+                latency_ms,
+                scoring_ms,
+            );
+
+            Err(e)
+        }
+    }
 }
 
 /// Infer the correct provider for a given model name.

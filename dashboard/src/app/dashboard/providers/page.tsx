@@ -1,78 +1,32 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import {
   Server,
   ChevronDown,
   ChevronRight,
-  Shield,
-  ShieldAlert,
-  ShieldOff,
   Clock,
   AlertTriangle,
   Activity,
+  RefreshCw,
 } from "lucide-react"
-import { fetchProviders } from "@/lib/api"
+import {
+  fetchProviderStats,
+  fetchModels,
+  type ProviderMetrics,
+  type ModelInfo,
+} from "@/lib/api"
 
-interface Provider {
-  name: string
-  status: "healthy" | "degraded" | "down"
-  circuitBreaker: "closed" | "open" | "half_open"
-  rateLimit: { used: number; total: number; unit: string }
-  models: string[]
-  avgLatency: number
-  errorRate: number
-  totalRequests: number
-}
-
-const statusConfig = {
-  healthy: {
-    label: "Healthy",
-    bgColor: "bg-green-100 dark:bg-green-900/30",
-    textColor: "text-green-700 dark:text-green-400",
-    dotColor: "bg-green-500",
-  },
-  degraded: {
-    label: "Degraded",
-    bgColor: "bg-yellow-100 dark:bg-yellow-900/30",
-    textColor: "text-yellow-700 dark:text-yellow-400",
-    dotColor: "bg-yellow-500",
-  },
-  down: {
-    label: "Down",
-    bgColor: "bg-red-100 dark:bg-red-900/30",
-    textColor: "text-red-700 dark:text-red-400",
-    dotColor: "bg-red-500",
-  },
-}
-
-const circuitBreakerConfig = {
-  closed: {
-    label: "Closed",
-    icon: Shield,
-    color: "text-green-600 dark:text-green-400",
-  },
-  half_open: {
-    label: "Half-Open",
-    icon: ShieldAlert,
-    color: "text-yellow-600 dark:text-yellow-400",
-  },
-  open: {
-    label: "Open",
-    icon: ShieldOff,
-    color: "text-red-600 dark:text-red-400",
-  },
-}
-
-function ProviderCard({ provider }: { provider: Provider }) {
+function ProviderCard({
+  provider,
+  models,
+}: {
+  provider: ProviderMetrics
+  models: ModelInfo[]
+}) {
   const [expanded, setExpanded] = useState(false)
-  const status = statusConfig[provider.status]
-  const cb = circuitBreakerConfig[provider.circuitBreaker]
-  const CbIcon = cb.icon
-  const rateLimitPercent =
-    provider.rateLimit.total > 0
-      ? (provider.rateLimit.used / provider.rateLimit.total) * 100
-      : 0
+
+  const providerModels = models.filter((m) => m.provider === provider.name)
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
@@ -86,28 +40,30 @@ function ProviderCard({ provider }: { provider: Provider }) {
               <Server className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white capitalize">
                 {provider.name}
               </h3>
               <div className="flex items-center gap-2 mt-1">
                 <span
-                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${status.bgColor} ${status.textColor}`}
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
+                    provider.is_healthy
+                      ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                      : "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
+                  }`}
                 >
                   <span
-                    className={`w-1.5 h-1.5 rounded-full ${status.dotColor}`}
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      provider.is_healthy ? "bg-green-500" : "bg-red-500"
+                    }`}
                   />
-                  {status.label}
-                </span>
-                <span className={`inline-flex items-center gap-1 text-xs ${cb.color}`}>
-                  <CbIcon className="w-3.5 h-3.5" />
-                  {cb.label}
+                  {provider.is_healthy ? "Healthy" : "Unhealthy"}
                 </span>
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2 text-gray-400">
             <span className="text-xs text-gray-400 dark:text-gray-500">
-              {provider.models.length} models
+              {providerModels.length} models
             </span>
             {expanded ? (
               <ChevronDown className="w-5 h-5" />
@@ -126,7 +82,9 @@ function ProviderCard({ provider }: { provider: Provider }) {
                 Avg Latency
               </p>
               <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                {provider.avgLatency > 0 ? `${provider.avgLatency}ms` : "N/A"}
+                {provider.avg_latency_ms > 0
+                  ? `${Math.round(provider.avg_latency_ms)}ms`
+                  : "N/A"}
               </p>
             </div>
           </div>
@@ -137,7 +95,7 @@ function ProviderCard({ provider }: { provider: Provider }) {
                 Error Rate
               </p>
               <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                {provider.errorRate}%
+                {provider.error_rate.toFixed(1)}%
               </p>
             </div>
           </div>
@@ -148,67 +106,42 @@ function ProviderCard({ provider }: { provider: Provider }) {
                 Total Requests
               </p>
               <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                {provider.totalRequests.toLocaleString()}
+                {provider.total_requests.toLocaleString()}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Rate Limit Bar */}
-        <div className="mt-4">
-          <div className="flex items-center justify-between text-xs mb-1">
-            <span className="text-gray-500 dark:text-gray-400">
-              Rate Limit ({provider.rateLimit.unit})
-            </span>
-            <span className="text-gray-600 dark:text-gray-300 font-medium">
-              {provider.rateLimit.used} / {provider.rateLimit.total}
-            </span>
-          </div>
-          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-            <div
-              className={`h-2 rounded-full transition-all ${
-                rateLimitPercent > 90
-                  ? "bg-red-500"
-                  : rateLimitPercent > 70
-                  ? "bg-yellow-500"
-                  : "bg-green-500"
-              }`}
-              style={{ width: `${Math.min(rateLimitPercent, 100)}%` }}
-            />
-          </div>
+        {/* Tokens Used */}
+        <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+          Tokens processed: {provider.total_tokens.toLocaleString()}
         </div>
       </div>
 
       {/* Expanded: Model List */}
-      {expanded && (
+      {expanded && providerModels.length > 0 && (
         <div className="border-t border-gray-200 dark:border-gray-800 px-6 py-4 bg-gray-50 dark:bg-gray-800/30">
           <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
             Available Models
           </h4>
           <div className="space-y-2">
-            {provider.models.map((model) => (
+            {providerModels.map((model) => (
               <div
-                key={model}
+                key={model.id}
                 className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800"
               >
                 <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {model}
+                  {model.id}
                 </span>
-                <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
-                  <span>
-                    {Math.floor(Math.random() * 1000) + 100} req/hr
-                  </span>
-                  <span>{Math.floor(Math.random() * 300) + 50}ms avg</span>
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                      provider.status === "down"
-                        ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400"
-                        : "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400"
-                    }`}
-                  >
-                    {provider.status === "down" ? "Offline" : "Online"}
-                  </span>
-                </div>
+                <span
+                  className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                    model.is_available
+                      ? "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400"
+                      : "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400"
+                  }`}
+                >
+                  {model.is_available ? "Available" : "Unavailable"}
+                </span>
               </div>
             ))}
           </div>
@@ -219,29 +152,82 @@ function ProviderCard({ provider }: { provider: Provider }) {
 }
 
 export default function ProvidersPage() {
-  const [providers, setProviders] = useState<Provider[]>([])
+  const [providers, setProviders] = useState<ProviderMetrics[]>([])
+  const [models, setModels] = useState<ModelInfo[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    async function loadData() {
-      const data = await fetchProviders()
-      setProviders(data)
+  const loadData = useCallback(async () => {
+    try {
+      setError(null)
+      const [p, m] = await Promise.all([fetchProviderStats(), fetchModels()])
+      setProviders(p)
+      setModels(m)
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to connect to gateway"
+      )
+    } finally {
+      setLoading(false)
     }
-    loadData()
   }, [])
 
-  const healthyCount = providers.filter((p) => p.status === "healthy").length
-  const degradedCount = providers.filter((p) => p.status === "degraded").length
-  const downCount = providers.filter((p) => p.status === "down").length
+  useEffect(() => {
+    loadData()
+    const interval = setInterval(loadData, 10000)
+    return () => clearInterval(interval)
+  }, [loadData])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="flex items-center gap-3 text-gray-400">
+          <RefreshCw className="w-5 h-5 animate-spin" />
+          <span>Loading providers...</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <div className="text-red-500 text-center">
+          <p className="font-semibold">Gateway Unavailable</p>
+          <p className="text-sm mt-1">{error}</p>
+        </div>
+        <button
+          onClick={loadData}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  const healthyCount = providers.filter((p) => p.is_healthy).length
+  const unhealthyCount = providers.filter((p) => !p.is_healthy).length
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Provider Health
-        </h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Monitor provider status, circuit breakers, and rate limits
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Provider Health
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Real-time provider status and performance metrics
+          </p>
+        </div>
+        <button
+          onClick={loadData}
+          className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+          title="Refresh data"
+        >
+          <RefreshCw className="w-5 h-5" />
+        </button>
       </div>
 
       {/* Summary */}
@@ -250,16 +236,10 @@ export default function ProvidersPage() {
           <span className="w-2 h-2 rounded-full bg-green-500" />
           {healthyCount} Healthy
         </span>
-        {degradedCount > 0 && (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">
-            <span className="w-2 h-2 rounded-full bg-yellow-500" />
-            {degradedCount} Degraded
-          </span>
-        )}
-        {downCount > 0 && (
+        {unhealthyCount > 0 && (
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
             <span className="w-2 h-2 rounded-full bg-red-500" />
-            {downCount} Down
+            {unhealthyCount} Unhealthy
           </span>
         )}
       </div>
@@ -267,8 +247,17 @@ export default function ProvidersPage() {
       {/* Provider Cards */}
       <div className="space-y-4">
         {providers.map((provider) => (
-          <ProviderCard key={provider.name} provider={provider} />
+          <ProviderCard
+            key={provider.name}
+            provider={provider}
+            models={models}
+          />
         ))}
+        {providers.length === 0 && (
+          <div className="text-center text-gray-400 py-12">
+            No providers configured.
+          </div>
+        )}
       </div>
     </div>
   )
