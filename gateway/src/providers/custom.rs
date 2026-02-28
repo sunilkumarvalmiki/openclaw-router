@@ -64,10 +64,11 @@ impl CustomProvider {
         format!("{}/v1/models", self.base_url)
     }
 
-    fn strip_custom_fields(body: &mut serde_json::Value) {
+    fn sanitize_request(body: &mut serde_json::Value) {
         if let Some(obj) = body.as_object_mut() {
             obj.remove("x_cost_profile");
             obj.remove("x_tier_hint");
+            obj.insert("stream".to_string(), serde_json::Value::Bool(false));
         }
     }
 }
@@ -91,7 +92,7 @@ impl LlmProvider for CustomProvider {
             .map_err(|e| AppError::Internal(format!("Failed to serialize request: {e}")))?;
 
         body["model"] = serde_json::Value::String(model_id.to_string());
-        Self::strip_custom_fields(&mut body);
+        Self::sanitize_request(&mut body);
 
         let mut req = self.client.post(self.completions_url());
 
@@ -104,7 +105,9 @@ impl LlmProvider for CustomProvider {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            self.healthy.store(false, Ordering::Relaxed);
+            if status.is_server_error() {
+                self.healthy.store(false, Ordering::Relaxed);
+            }
             return Err(AppError::ProviderError(format!(
                 "Custom provider '{}' API error ({}): {}",
                 self.name_str, status, error_text

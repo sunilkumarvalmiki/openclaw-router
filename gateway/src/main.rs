@@ -54,25 +54,35 @@ async fn main() -> std::io::Result<()> {
     );
 
     // -----------------------------------------------------------------------
-    // 4. Connect to PostgreSQL
+    // 4. Connect to PostgreSQL (optional — standalone mode if unavailable)
     // -----------------------------------------------------------------------
-    let db_pool = PgPoolOptions::new()
-        .max_connections(20)
-        .connect(&config.database_url)
-        .await
-        .expect("Failed to connect to PostgreSQL");
+    let db_pool = if let Some(ref db_url) = config.database_url {
+        match PgPoolOptions::new()
+            .max_connections(20)
+            .connect(db_url)
+            .await
+        {
+            Ok(pool) => {
+                tracing::info!("Connected to PostgreSQL");
 
-    tracing::info!("Connected to PostgreSQL");
+                // 5. Run pending migrations
+                if let Err(e) = sqlx::migrate!("./migrations").run(&pool).await {
+                    tracing::warn!("Failed to run migrations: {e}");
+                } else {
+                    tracing::info!("Database migrations applied");
+                }
 
-    // -----------------------------------------------------------------------
-    // 5. Run pending migrations
-    // -----------------------------------------------------------------------
-    sqlx::migrate!("./migrations")
-        .run(&db_pool)
-        .await
-        .expect("Failed to run database migrations");
-
-    tracing::info!("Database migrations applied");
+                Some(pool)
+            }
+            Err(e) => {
+                tracing::warn!("PostgreSQL unavailable ({e}), running in standalone mode");
+                None
+            }
+        }
+    } else {
+        tracing::info!("No DATABASE_URL set — running in standalone mode (no persistence)");
+        None
+    };
 
     // -----------------------------------------------------------------------
     // 6. Build LLM providers from environment variables
@@ -83,7 +93,7 @@ async fn main() -> std::io::Result<()> {
     // 7. Build shared application state
     // -----------------------------------------------------------------------
     let config_data = web::Data::new(config.clone());
-    let pool_data = web::Data::new(db_pool);
+    let pool_data = web::Data::new(db_pool); // Option<PgPool>
     let app_state = web::Data::new(AppState {
         scorer: RequestScorer::new(),
         providers: llm_providers,

@@ -282,7 +282,11 @@ impl LlmProvider for GeminiProvider {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            self.healthy.store(false, Ordering::Relaxed);
+            // Only mark unhealthy on server errors (5xx), not client errors (4xx)
+            // like rate limits (429) or bad requests (400).
+            if status.is_server_error() {
+                self.healthy.store(false, Ordering::Relaxed);
+            }
             return Err(AppError::ProviderError(format!(
                 "Gemini API error ({}): {}",
                 status, error_text

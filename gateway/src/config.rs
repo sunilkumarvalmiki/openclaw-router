@@ -10,8 +10,8 @@ pub struct AppConfig {
     pub host: String,
     /// Port number for the HTTP server.
     pub port: u16,
-    /// PostgreSQL connection string. **Required** -- panics if missing.
-    pub database_url: String,
+    /// PostgreSQL connection string. Optional -- runs in standalone mode if missing.
+    pub database_url: Option<String>,
     /// Redis connection string.
     pub redis_url: String,
     /// Default cost profile for routing decisions.
@@ -33,8 +33,7 @@ impl AppConfig {
     ///
     /// Panics if `DATABASE_URL` is not set.
     pub fn from_env() -> Self {
-        let database_url = env::var("DATABASE_URL")
-            .expect("DATABASE_URL environment variable is required");
+        let database_url = env::var("DATABASE_URL").ok();
 
         Self {
             host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into()),
@@ -79,7 +78,7 @@ mod tests {
         let config = AppConfig {
             host: "127.0.0.1".into(),
             port: 9090,
-            database_url: "postgres://localhost/test".into(),
+            database_url: Some("postgres://localhost/test".into()),
             redis_url: "redis://127.0.0.1:6379".into(),
             default_cost_profile: "balanced".into(),
             cache_ttl_seconds: 3600,
@@ -92,9 +91,8 @@ mod tests {
 
     #[test]
     fn test_defaults() {
-        // Temporarily set DATABASE_URL for the test
-        env::set_var("DATABASE_URL", "postgres://localhost/test_db");
-        // Clear others to check defaults
+        // Clear DATABASE_URL to check optional behavior
+        env::remove_var("DATABASE_URL");
         env::remove_var("HOST");
         env::remove_var("PORT");
         env::remove_var("REDIS_URL");
@@ -108,15 +106,12 @@ mod tests {
 
         assert_eq!(config.host, "0.0.0.0");
         assert_eq!(config.port, 8080);
-        assert_eq!(config.database_url, "postgres://localhost/test_db");
+        assert_eq!(config.database_url, None);
         assert_eq!(config.redis_url, "redis://127.0.0.1:6379");
         assert_eq!(config.default_cost_profile, "balanced");
         assert_eq!(config.cache_ttl_seconds, 3600);
         assert_eq!(config.max_cache_entries, 10_000);
         assert_eq!(config.pricing_sync_interval_seconds, 3600);
         assert_eq!(config.dashboard_url, "http://localhost:3000");
-
-        // Clean up
-        env::remove_var("DATABASE_URL");
     }
 }
