@@ -1,0 +1,47 @@
+{
+  "name": "openclaw-router",
+  "version": "1.0.0",
+  "description": "Unified LLM Router for OpenClaw - Intelligent request routing with 92-99% cost savings",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "test:ui": "vitest --ui",
+    "integration-test": "ts-node src/integration-tests.ts",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write src",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "openclaw",
+    "llm",
+    "router",
+    "optimization",
+    "cost-savings",
+    "multi-provider",
+    "intelligent-routing"
+  ],
+  "author": "OpenClaw",
+  "license": "MIT",
+  "dependencies": {
+    "ethers": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0",
+    "ts-node": "^10.0.0",
+    "eslint": "^8.0.0",
+    "prettier": "^3.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openclaw/openclaw-router.git"
+  },
+  "bugs": {
+    "url": "https://github.com/openclaw/openclaw-router/issues"
+  },
+  "homepage": "https://github.com/openclaw/openclaw-router#readme"
+}
