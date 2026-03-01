@@ -1,6 +1,7 @@
 mod config;
 mod error;
 mod metrics;
+mod openclaw_config;
 mod providers;
 mod routes;
 mod routing;

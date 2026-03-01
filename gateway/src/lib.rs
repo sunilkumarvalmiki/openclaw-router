@@ -1,5 +1,6 @@
 pub mod config;
 pub mod error;
+pub mod openclaw_config;
 pub mod optimization;
 pub mod pricing;
 pub mod providers;
