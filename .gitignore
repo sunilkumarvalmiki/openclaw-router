@@ -43,6 +43,9 @@ coverage/
 # Docker
 docker/.env
 
+# Claude Code local config
+.claude.local.md
+
 # Misc
 .cache/
 .eslintcache

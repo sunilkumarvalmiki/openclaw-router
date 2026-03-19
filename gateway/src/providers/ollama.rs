@@ -63,6 +63,7 @@ impl OllamaProvider {
         if let Some(obj) = body.as_object_mut() {
             obj.remove("x_cost_profile");
             obj.remove("x_tier_hint");
+            obj.remove("x_priority");
             // Force non-streaming — the router collects the full response.
             obj.insert("stream".to_string(), serde_json::Value::Bool(false));
         }

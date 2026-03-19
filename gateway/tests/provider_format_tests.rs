@@ -26,6 +26,7 @@ fn simple_request(content: &str) -> ChatCompletionRequest {
         response_format: None,
         x_cost_profile: None,
         x_tier_hint: None,
+        x_priority: None,
     }
 }
 
@@ -388,6 +389,7 @@ fn test_vision_content_format() {
         response_format: None,
         x_cost_profile: None,
         x_tier_hint: None,
+        x_priority: None,
     };
 
     let json = serde_json::to_value(&request).unwrap();

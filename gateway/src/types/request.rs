@@ -45,6 +45,16 @@ pub struct ChatCompletionRequest {
     /// User tier hint: "free", "pro", "enterprise".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub x_tier_hint: Option<String>,
+
+    /// Priority hint: "low", "normal", or "high".
+    ///
+    /// - **low**: Routine tasks (reminders, health checks, heartbeats,
+    ///   summaries, notifications). Routed to free local models (Ollama).
+    /// - **normal** (default): Standard routing based on scoring engine.
+    /// - **high**: Critical tasks (research, coding, learning, analysis).
+    ///   Routed to premium cloud providers, never local.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x_priority: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

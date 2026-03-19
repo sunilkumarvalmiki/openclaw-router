@@ -68,6 +68,7 @@ impl CustomProvider {
         if let Some(obj) = body.as_object_mut() {
             obj.remove("x_cost_profile");
             obj.remove("x_tier_hint");
+            obj.remove("x_priority");
             obj.insert("stream".to_string(), serde_json::Value::Bool(false));
         }
     }

@@ -21,6 +21,7 @@ fn simple_request(content: &str) -> ChatCompletionRequest {
         response_format: None,
         x_cost_profile: None,
         x_tier_hint: None,
+        x_priority: None,
     }
 }
 
@@ -132,6 +133,7 @@ fn test_cache_key_message_order_independent() {
         response_format: None,
         x_cost_profile: None,
         x_tier_hint: None,
+        x_priority: None,
     };
 
     let r2 = ChatCompletionRequest {
@@ -161,6 +163,7 @@ fn test_cache_key_message_order_independent() {
         response_format: None,
         x_cost_profile: None,
         x_tier_hint: None,
+        x_priority: None,
     };
 
     assert_eq!(

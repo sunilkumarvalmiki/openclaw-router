@@ -130,18 +130,23 @@ impl ProviderFactory {
             }
         }
 
+        // Ollama is always registered when OLLAMA_ENDPOINT is set,
+        // regardless of OpenClaw status — it serves as the local free-tier
+        // provider for low-priority tasks (reminders, health checks, etc.).
+        if !registered.contains("ollama") {
+            if let Some(endpoint) = env_non_empty("OLLAMA_ENDPOINT") {
+                let provider = OllamaProvider::new(Some(endpoint));
+                providers.push(Arc::new(provider));
+                registered.insert("ollama".to_string());
+                tracing::info!("Provider registered: ollama (local)");
+            }
+        }
+
         // The providers below are only registered from env vars when
         // OpenClaw auto-detection did NOT find any providers (i.e. OpenClaw
         // is not installed or not configured). This prevents stray system
         // env vars from registering unwanted providers.
         if !openclaw_active {
-            // Ollama (requires explicit OLLAMA_ENDPOINT)
-            if let Some(endpoint) = env_non_empty("OLLAMA_ENDPOINT") {
-                let provider = OllamaProvider::new(Some(endpoint));
-                providers.push(Arc::new(provider));
-                registered.insert("ollama".to_string());
-                tracing::info!("Provider registered: ollama");
-            }
 
             // OpenRouter
             if let Some(api_key) = env_non_empty("OPENROUTER_API_KEY") {

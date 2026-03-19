@@ -28,6 +28,7 @@ fn make_request(messages: Vec<Message>) -> ChatCompletionRequest {
         response_format: None,
         x_cost_profile: None,
         x_tier_hint: None,
+        x_priority: None,
     }
 }
 

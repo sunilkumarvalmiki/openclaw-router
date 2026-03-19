@@ -21,6 +21,7 @@ fn simple_request(content: &str) -> ChatCompletionRequest {
         response_format: None,
         x_cost_profile: None,
         x_tier_hint: None,
+        x_priority: None,
     }
 }
 
@@ -154,6 +155,7 @@ fn test_vision_detection() {
         response_format: None,
         x_cost_profile: None,
         x_tier_hint: None,
+        x_priority: None,
     };
 
     let result = scorer.score(&request);
@@ -179,6 +181,7 @@ fn test_empty_messages_scores_simple() {
         response_format: None,
         x_cost_profile: None,
         x_tier_hint: None,
+        x_priority: None,
     };
 
     let result = scorer.score(&request);
@@ -212,6 +215,7 @@ fn test_empty_content_message() {
         response_format: None,
         x_cost_profile: None,
         x_tier_hint: None,
+        x_priority: None,
     };
 
     let result = scorer.score(&request);
@@ -240,6 +244,7 @@ fn test_null_content_message() {
         response_format: None,
         x_cost_profile: None,
         x_tier_hint: None,
+        x_priority: None,
     };
 
     let result = scorer.score(&request);
@@ -533,6 +538,7 @@ fn test_multi_message_conversation() {
         response_format: None,
         x_cost_profile: None,
         x_tier_hint: None,
+        x_priority: None,
     };
 
     let result = scorer.score(&request);
@@ -711,6 +717,7 @@ fn test_content_array_text_only() {
         response_format: None,
         x_cost_profile: None,
         x_tier_hint: None,
+        x_priority: None,
     };
 
     let result = scorer.score(&request);
